@@ -164,10 +164,9 @@ class AutoencoderIDS :
         attackMeans = attackStatistics[1]
         attackStds = attackStatistics[2]
 
-        if flag > 1 :
+        if flag == 1 :
             df = df[df[17] > 0]
-        
-
+    
         print('phase 0') #std 비교
         contactPoint = getContactPoint(normalMeans[0], normalStds[0], attackMeans[0], attackStds[0])
         df[0] = df[0].map(lambda x : 1 if x > contactPoint else 0)
@@ -198,7 +197,7 @@ class AutoencoderIDS :
         one_hot_encoding = enc.transform(df[[1,13,19,23]].values).toarray()
         #one_hot_encoding = enc.transform(df[[1,13,23]].values).toarray()
         
-        df = df.drop([1,13,17,18,19,20,22,23], axis = 1)
+        df = df.drop([1,13,17,18,19,20,21,22,23], axis = 1)
         
         inputData = np.concatenate((df, one_hot_encoding), axis = 1).astype(np.float32)
         
@@ -248,4 +247,5 @@ class AutoencoderIDS :
 autoencoder = AutoencoderIDS()
 df = autoencoder.getDataFrame('./data')
 df2 = autoencoder.toNumericData(df, False, False)
-a = autoencoder.toAutoEncoderData(1, df2, makeHDF5 = True,makeCSV =  False)
+a = autoencoder.toAutoEncoderData(1, df2, makeHDF5 = False,makeCSV =  True)
+a = autoencoder.toAutoEncoderData(0, df2, makeHDF5 = False,makeCSV =  True)
