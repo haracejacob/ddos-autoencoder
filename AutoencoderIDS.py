@@ -113,12 +113,29 @@ class AutoencoderIDS :
             
         return df
     
-    def toAutoEncoderData(self, df=None, csvPath=None, flag) :
+    def toAutoEncoderData(self, flag, df=None, csvPath=None) :
         if df == None :
             if csvPath == None :
                 return
             df = pd.read_csv(csvPath, sep="\t", header = None)
 
 autoencoder = AutoencoderIDS()
+df1 = autoencoder.getDataFrame('./Kyoto2016/2014/01')
+df2 = autoencoder.getDataFrame('./Kyoto2016/2014/02')
+df3 = autoencoder.getDataFrame('./Kyoto2016/2014/03')
+df4 = autoencoder.getDataFrame('./Kyoto2016/2014/04')
+df5 = autoencoder.getDataFrame('./Kyoto2016/2014/05')
+df6 = autoencoder.getDataFrame('./Kyoto2016/2014/06')
+
+frames = [df1, df2, df3, df4, df5, df6]
+df = pd.concat(frames, ignore_index=True)
+del df1
+del df2
+del df3
+del df4
+del df5
+del df6
+del frames
+
 #df = autoencoder.getDataFrame('./data')
-#df2 = autoencoder.toNumericData(df, False, True)
+df2 = autoencoder.toNumericData(df, False, True)
