@@ -10,3 +10,15 @@ wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201409.zip
 wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201410.zip
 wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201411.zip
 wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201412.zip
+unzip 201401
+unzip 201402
+unzip 201403
+unzip 201404
+unzip 201405
+unzip 201406
+unzip 201407
+unzip 201408
+unzip 201409
+unzip 201410
+unzip 201411
+unzip 201412
