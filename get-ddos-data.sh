@@ -1,0 +1,12 @@
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201401.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201402.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201403.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201404.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201405.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201406.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201407.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201408.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201409.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201410.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201411.zip
+wget http://www.takakura.com/Kyoto_data/new_data201704/2014/201412.zip
