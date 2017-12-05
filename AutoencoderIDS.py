@@ -11,29 +11,11 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder
+from sklearn import metrics
 import math
 import h5py
+import caffe
 
-def getNormalDistData(x, mean, std) :
-    return 1/math.sqrt(2*math.pi*(std**2))*math.pow(math.e,-(x-mean)**2/(2*std**2))
-
-def getContactPoint(mean1, std1, mean2, std2) :
-    if(mean1 > mean2) :
-        mean1, mean2 = mean2, mean1
-        std1, std2 = std2, std1
-    x = mean1
-    weights = 1
-    
-    while(weights != 0.00001) :
-        val1 = getNormalDistData(x+weights, mean1, std1)
-        val2 = getNormalDistData(x+weights, mean2, std2)
-
-        if(val1 > val2) :
-            x += weights
-        else :
-            weights /= 10
-    return x
-    
 class AutoencoderIDS :
     def __init__(self) :
         print('autoencoderIDS')
@@ -57,7 +39,7 @@ class AutoencoderIDS :
         sumDF = pd.concat(frames, ignore_index=True)
         return sumDF   
     
-    def toNumericData(self, df, save=False, plot=False) :
+    def toNumericData(self, df, save=False, makePlot=False) :
         print('phase 1')
         df[1].replace(self.serviceData, range(len(self.serviceData)), inplace=True)
         #make flag to categorical data
@@ -107,7 +89,7 @@ class AutoencoderIDS :
         #df[23].replace(replaceArr23, range(replaceArr23.shape[0]), inplace=True)
         df.drop([18, 20, 22], axis=1)
 
-        if plot :
+        if makePlot :
             if not os.path.exists('./plot'):
                 os.makedirs('./plot')
             columns = ['Duration', 'Service', 'Source bytes', 'Destination bytes', 'Count', 'Same srv rate', \
@@ -143,11 +125,33 @@ class AutoencoderIDS :
         
         if save :
             df.describe().to_csv('df_describe.csv')
-            df.to_csv('df.csv')
+            df.to_csv(save+'.csv')
             
         return df
     
     def toAutoEncoderData(self, flag, df=None, csvPath=None, makeHDF5=True, makeCSV=True) :
+        def getNormalDistData(x, mean, std) :
+            #return 1/math.sqrt(2*math.pi*(std**2))*math.pow(math.e,-(x-mean)**2/(2*std**2))
+            return 2*math.log(std,math.e)+((x-mean)/std)**2
+        
+        def getContactPoint(mean1, std1, mean2, std2) :
+            if(mean1 > mean2) :
+                mean1, mean2 = mean2, mean1
+                std1, std2 = std2, std1
+            x = mean1
+            weights = 1
+            
+            while(weights != 0.00001) :
+                val1 = getNormalDistData(x+weights, mean1, std1)
+                val2 = getNormalDistData(x+weights, mean2, std2)
+                
+                if(val1 < val2) :
+                    x += weights
+                else :
+                    weights /= 10
+                
+            return x
+        
         enc = OneHotEncoder(n_values=[len(self.serviceData),len(self.flagData),3,3])
         if type(df) == type(None) :
             if type(csvPath) == type(None) :
@@ -237,15 +241,104 @@ class AutoencoderIDS :
                     filelist.write(hdf5FilePath)
                 else :
                     with h5py.File(hdf5FilePath, 'w') as f:
-                        #f['data'] = inputData[idx*100000:(idx+1)*100000]
-                        #f['label'] = label[idx*100000:(idx+1)*100000]
-                        f['data'] = inputData
-                        f['label'] = label
+                        f['data'] = inputData[idx*100000:(idx+1)*100000]
+                        f['label'] = label[idx*100000:(idx+1)*100000]
+                        #f['data'] = inputData
+                        #f['label'] = label
                     filelist.write(hdf5FilePath+'\n')
             filelist.close()
+            
+    def deploy(self, model, weights, df=None, label=None, hdf5Path=None, makeCSV=True, makePlot=True) :
+        def cross_entropy(y, p) :    
+            result = 0
+            for idx in range(y.shape[0]) :
+                if(y[idx] == 1) :
+                    b = -math.log10(p[idx])
+                    result += b
+                else :
+                    b = -(y[idx]*math.log10(p[idx]) + (1-y[idx])*math.log10(1-p[idx]))
+                    result += b
+            return result
+        if type(df) == type(None) :
+            if type(hdf5Path) == type(None) :
+                return
+            with h5py.File(hdf5Path, 'r') as f:
+                data = f['.']['data'].value
+                labels = f['.']['label'].value
+        else :
+            data = df.values
+            labels = label.values
+        
+        print(data.shape)
+        
+        net = caffe.Net(model, weights, caffe.TEST)
+        normalDataLoss = []
+        attackDataLoss = []
+        
+        for idx in range(data.shape[0]) :
+            if idx%100000 == 0 :
+                print(idx)
+            net.blobs['data'].data[...] = data[idx]
+            
+            res = net.forward()
+            loss = cross_entropy(data[idx], res['decode1neuron'].reshape((res['decode1neuron'].shape[1])))
+            if(labels[idx] == 1) :
+                normalDataLoss.append(loss)
+            else:
+                attackDataLoss.append(loss)
+                
+        print("Normal data loss("+len(normalDataLoss)+") : ", np.average(np.array(normalDataLoss)))
+        print("Attack data loss("+len(attackDataLoss)+") : ", np.average(np.array(attackDataLoss)))
+    
+        allDataLoss = normalDataLoss+attackDataLoss
+        print("Sum : ",len(allDataLoss))
+        allLabel = [1]*len(normalDataLoss)+[0]*len(attackDataLoss)
+        fpr, tpr, thresholds = metrics.roc_curve(np.array(allLabel), np.array(allDataLoss), pos_label=0, drop_intermediate=False)
+        
+        if makePlot : 
+            if not os.path.exists('./plot'):
+                os.makedirs('./plot')
+            plt.figure()
+            lw = 2
+            plt.plot(fpr, tpr, color='darkorange', lw=lw, )
+            plt.plot([0, 1], [0, 1], color='navy', lw=lw, linestyle='--')
+            plt.xlim([0.0, 1.0])
+            plt.ylim([0.0, 1.05])
+            plt.xlabel('False Positive Rate')
+            plt.ylabel('True Positive Rate')
+            plt.title('DDOS detection AutoEncoder ROC-curve')
+            plt.legend(loc="lower right")
+            plt.savefig('./plot/deploy_roc_curve.png', dpi=80)
+            plt.show()
+        
+        if makeCSV :
+            if not os.path.exists('./csv'):
+                os.makedirs('./csv')
+            
+            threshold = []
+            recall = []
+            precision = []
+            specificity = []
+            f1-measure = []
+            for rate in range(10, 20, 1) :
+                truePositiveRate = tpr[np.where(tpr>(rate*0.05))[0][0]]
+                falsePositiveRate = fpr[np.where(tpr>(rate*0.05))[0][0]]
+                recall.append(truePositiveRate)
+                precision.append(truePositiveRate*len(attackDataLoss))/(truePositiveRate*len(attackDataLoss)+falsePositiveRate*len(normalDataLoss))
+                specificity.append(1-falsePositiveRate)
+                f1-measure.append((2*recall*precision)/(precision+recall))
+                threshold.append(thresholds[np.where(tpr>(rate*0.05))[0][0]])
+            frames = pd.DataFrame({'true positive rate' : truePositiveRate,
+                          'false positive rate' : falsePositiveRate,
+                          'recall' : recall,
+                          'precision' : precision,
+                          'specificity' : specificity,
+                          'f1-measure' : f1-measure,
+                          'threshold' : threshold})
+            frames.to_csv('./csv/deploy_description.csv')
 
-autoencoder = AutoencoderIDS()
-df = autoencoder.getDataFrame('./data')
-df2 = autoencoder.toNumericData(df, False, False)
-a = autoencoder.toAutoEncoderData(1, df2, makeHDF5 = False,makeCSV =  True)
-a = autoencoder.toAutoEncoderData(0, df2, makeHDF5 = False,makeCSV =  True)
+#autoencoder = AutoencoderIDS()
+#df = autoencoder.getDataFrame('./data')
+#df2 = autoencoder.toNumericData(df, False, False)
+#a = autoencoder.toAutoEncoderData(1, df2, makeHDF5 = False,makeCSV =  True)
+#a = autoencoder.toAutoEncoderData(0, df2, makeHDF5 = False,makeCSV =  True)
