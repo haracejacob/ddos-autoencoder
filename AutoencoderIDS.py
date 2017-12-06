@@ -338,4 +338,4 @@ class AutoencoderIDS :
                           'specificity' : specificity,
                           'f1-measure' : f1_measure,
                           'threshold' : threshold})
-            frames.to_csv('./csv/deploy_description.csv', sep="\t", header = None, index=False)
+            frames.to_csv('./csv/deploy_description.csv', sep="\t", index=False)
