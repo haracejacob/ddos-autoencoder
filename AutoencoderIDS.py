@@ -34,8 +34,8 @@ class AutoencoderIDS :
             df = pd.read_csv(dir+'/'+filename, sep="\t", header = None)
             print(df.size)
             frames.append(df)
-        
         sumDF = pd.concat(frames, ignore_index=True)
+        
         return sumDF   
     
     def toNumericData(self, df, save=False, makePlot=False) :
@@ -338,3 +338,4 @@ class AutoencoderIDS :
                           'specificity' : specificity,
                           'f1-measure' : f1_measure,
                           'threshold' : threshold})
+            frames.to_csv('./csv/deploy_description.csv', sep="\t", header = None, index=False)
