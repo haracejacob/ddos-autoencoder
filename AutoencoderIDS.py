@@ -27,7 +27,6 @@ class AutoencoderIDS :
         flag.close()
         
     def getDataFrame(self, dir) :
-        #sumDF = pd.DataFrame([])
         filelist = os.listdir(dir)
         frames = []
         for filename in filelist :
@@ -35,7 +34,7 @@ class AutoencoderIDS :
             df = pd.read_csv(dir+'/'+filename, sep="\t", header = None)
             print(df.size)
             frames.append(df)
-        #sumDF = sumDF.append(df, ignore_index=True)
+        
         sumDF = pd.concat(frames, ignore_index=True)
         return sumDF   
     
@@ -44,20 +43,12 @@ class AutoencoderIDS :
         df[1].replace(self.serviceData, range(len(self.serviceData)), inplace=True)
         #make flag to categorical data
         print('phase 13')
-        #replace_arr_13 = np.array(flag_data)
         df[13].replace(self.flagData, range(len(self.flagData)), inplace=True)
         #make IDS_detection as binary (0:not triggered 1:triggered)
         print('phase 14')
         replaceArr14 = [1]*df[14].unique().shape[0]
         if(df[14].unique()[0] == '0' or df[14].unique()[0] == 0) :
             replaceArr14[0] = 0
-        """
-        for i in df[14].unique() :
-            if(i == 0 or i == '0') :
-                replaceArr14.append(0)
-            else :
-                replaceArr14.append(1)
-        """
         df[14].replace(df[14].unique(), replaceArr14, inplace=True)
         #make malware_detection as number of the same malware observed during the connection
         print('phase 15')
@@ -73,14 +64,6 @@ class AutoencoderIDS :
         replaceArr16 = [1]*df[16].unique().shape[0]
         if(df[16].unique()[0] == '0' or df[16].unique()[0] == 0) :
             replaceArr16[0] = 0
-        """
-        replaceArr16= []
-        for i in df[16].unique() :
-            if(i == 0 or i == '0') :
-                replaceArr16.append(0)
-            else :
-                replaceArr16.append(1)
-        """
         df[16].replace(df[16].unique(), replaceArr16, inplace=True)
         #make protocol to categorical data
         print('phase 23')
@@ -124,12 +107,16 @@ class AutoencoderIDS :
             print('Save the distplot image in \'distplot_all.png\'')
         
         if save :
-            df.describe().to_csv('df_describe.csv')
-            df.to_csv(save+'.csv')
+            if not os.path.exists('./csv'):
+                os.makedirs('./csv')
+            if not os.path.exists('./describe'):
+                os.makedirs('./describe')
+            df.describe().to_csv('./describe/'+save+'_describe.csv', sep="\t", header = None, index=False)
+            df.to_csv('./csv/'+save+'.csv', sep="\t", header = None, index=False)
             
         return df
     
-    def toAutoEncoderData(self, flag, df=None, csvPath=None, makeHDF5=True, makeCSV=True) :
+    def toAutoEncoderData(self, flag, df=None, csvPath=None, dropDuplicate=False, makeHDF5=True, makeCSV=True) :
         def getNormalDistData(x, mean, std) :
             #return 1/math.sqrt(2*math.pi*(std**2))*math.pow(math.e,-(x-mean)**2/(2*std**2))
             return 2*math.log(std,math.e)+((x-mean)/std)**2
@@ -156,7 +143,10 @@ class AutoencoderIDS :
         if type(df) == type(None) :
             if type(csvPath) == type(None) :
                 return
-            df = pd.read_csv(csvPath, sep="\t", header = None)
+            if os.path.isfile(csvPath) :
+                df = pd.read_csv(csvPath, sep="\t", header = None)
+            else :
+                df = self.getDataFrame(csvPath)
         
         normalStatistics = df[df[17]>0].describe()
         normalStatistics = normalStatistics.values
@@ -190,7 +180,8 @@ class AutoencoderIDS :
         
         print('phase 17')
         df[17] = df[17].map(lambda x : 1 if x > 0 else 0)
-        label = df[17].values.astype(np.int)  
+        label = df[17].values.astype(np.int)
+        label = label.reshape((label.shape[0],1))
         #make port_number as one-hot encoding
         #drop 18,20,22
         print('phase 19') #port number reserved port, well-know port, unknown port => one hot encoding
@@ -204,6 +195,16 @@ class AutoencoderIDS :
         df = df.drop([1,13,17,18,19,20,21,22,23], axis = 1)
         
         inputData = np.concatenate((df, one_hot_encoding), axis = 1).astype(np.float32)
+        print(label.shape, inputData.shape)
+        if dropDuplicate :
+            print('Before drop Duplicate : ', inputData.shape[0])
+            tempList = np.concatenate((inputData,label),axis=1)
+            tempDF = pd.DataFrame(tempList)
+            del tempList
+            tempDF.drop_duplicates(inplace=True)
+            inputData = tempDF.loc[:, :111].values
+            label = tempDF.loc[:, 112].values
+            print('After drop Duplicate : ', inputData.shape[0])
         
         print(inputData.shape)
         if(makeCSV == True) :
@@ -247,6 +248,8 @@ class AutoencoderIDS :
                         #f['label'] = label
                     filelist.write(hdf5FilePath+'\n')
             filelist.close()
+            
+        return inputData, label
             
     def deploy(self, model, weights, df=None, label=None, hdf5Path=None, makeCSV=True, makePlot=True) :
         def cross_entropy(y, p) :    
@@ -319,26 +322,19 @@ class AutoencoderIDS :
             recall = []
             precision = []
             specificity = []
-            f1-measure = []
+            f1_measure = []
             for rate in range(10, 20, 1) :
                 truePositiveRate = tpr[np.where(tpr>(rate*0.05))[0][0]]
                 falsePositiveRate = fpr[np.where(tpr>(rate*0.05))[0][0]]
                 recall.append(truePositiveRate)
                 precision.append(truePositiveRate*len(attackDataLoss))/(truePositiveRate*len(attackDataLoss)+falsePositiveRate*len(normalDataLoss))
                 specificity.append(1-falsePositiveRate)
-                f1-measure.append((2*recall*precision)/(precision+recall))
+                f1_measure.append((2*recall*precision)/(precision+recall))
                 threshold.append(thresholds[np.where(tpr>(rate*0.05))[0][0]])
             frames = pd.DataFrame({'true positive rate' : truePositiveRate,
                           'false positive rate' : falsePositiveRate,
                           'recall' : recall,
                           'precision' : precision,
                           'specificity' : specificity,
-                          'f1-measure' : f1-measure,
+                          'f1-measure' : f1_measure,
                           'threshold' : threshold})
-            frames.to_csv('./csv/deploy_description.csv')
-
-#autoencoder = AutoencoderIDS()
-#df = autoencoder.getDataFrame('./data')
-#df2 = autoencoder.toNumericData(df, False, False)
-#a = autoencoder.toAutoEncoderData(1, df2, makeHDF5 = False,makeCSV =  True)
-#a = autoencoder.toAutoEncoderData(0, df2, makeHDF5 = False,makeCSV =  True)
