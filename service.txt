@@ -76,3 +76,5 @@ snmp
 ssl
 dhcp
 krb_tcp
+ftp-data
+radius
