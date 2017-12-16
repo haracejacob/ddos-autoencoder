@@ -115,7 +115,7 @@ class AutoencoderIDS :
                 os.makedirs('./csv')
             if not os.path.exists('./describe'):
                 os.makedirs('./describe')
-            df.describe().to_csv('./describe/'+save+'_describe.csv', sep="\t", header = None, index=False)
+            df.describe().to_csv('./describe/'+save+'_describe.csv')
             df.to_csv('./csv/'+save+'.csv', sep="\t", header = None, index=False)
             
         return df
@@ -143,6 +143,7 @@ class AutoencoderIDS :
                 
             return x
         
+        #85+13+3+3 = 104
         enc = OneHotEncoder(n_values=[len(self.serviceData),len(self.flagData),3,3])
         if type(df) == type(None) :
             if type(csvPath) == type(None) :
@@ -185,38 +186,37 @@ class AutoencoderIDS :
         print('phase 8')
         df[8] = df[8]/100
         print('phase 9')
-        df[9] = df[9]/100
-        
+        df[9] = df[9]/100        
         print('phase 17')
         df[17] = df[17].map(lambda x : 1 if x > 0 else 0)
         label = df[17].values.astype(np.int)
         label = label.reshape((label.shape[0],1))
         #make port_number as one-hot encoding
-        #drop 18,20,22
         print('phase 19') #port number reserved port, well-know port, unknown port => one hot encoding
         df[19] = df[19].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
         
         enc.fit(df[[1,13,19,23]].values)
         
+        #already droped 18,20,22
         one_hot_encoding = enc.transform(df[[1,13,19,23]].values).toarray()
         #one_hot_encoding = enc.transform(df[[1,13,23]].values).toarray()
-        
-        df.drop([1,13,17,18,19,20,21,22,23], axis = 1, inplace=True)
-        
+
+        #0,2,3,4,5,6,7,8,9,10,11,12,14,15,16 => 15
+        df.drop([1,13,17,19,21,23], axis = 1, inplace=True)
+
         inputData = np.concatenate((df, one_hot_encoding), axis = 1).astype(np.float32)
         print(label.shape, inputData.shape)
         if dropDuplicate :
             print('Before drop Duplicate : ', inputData.shape[0])
             tempList = np.concatenate((inputData,label),axis=1)
             tempDF = pd.DataFrame(tempList)
-            print(tempList.shape)
             del tempList
             tempDF.drop_duplicates(inplace=True)
-            inputData = tempDF.loc[:, :116].values
-            label = tempDF.loc[:, 117].values
+            inputData = tempDF.loc[:, :118].values
+            label = tempDF.loc[:, 119].values
             print('After drop Duplicate : ', inputData.shape[0])
         
-        print(inputData.shape)
+        print(label.shape, inputData.shape)
         if(makeCSV == True) :
             if not os.path.exists('./csv'):
                 os.makedirs('./csv')
