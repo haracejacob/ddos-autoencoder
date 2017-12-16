@@ -14,7 +14,7 @@ from sklearn.preprocessing import OneHotEncoder
 from sklearn import metrics
 import math
 import h5py
-import caffe
+#import caffe
 
 class AutoencoderIDS :
     def __init__(self) :
@@ -50,6 +50,7 @@ class AutoencoderIDS :
         if(df[14].unique()[0] == '0' or df[14].unique()[0] == 0) :
             replaceArr14[0] = 0
         df[14].replace(df[14].unique(), replaceArr14, inplace=True)
+        del replaceArr14
         #make malware_detection as number of the same malware observed during the connection
         print('phase 15')
         replaceArr15 = []
@@ -59,18 +60,21 @@ class AutoencoderIDS :
             else :
                 replaceArr15.append(1)
         df[15].replace(df[15].unique(), replaceArr15, inplace=True)
+        del replaceArr15
         #make Ashula_detection as number of the same shellcode or exploit code observed during the connection
         print('phase 16')
         replaceArr16 = [1]*df[16].unique().shape[0]
         if(df[16].unique()[0] == '0' or df[16].unique()[0] == 0) :
             replaceArr16[0] = 0
         df[16].replace(df[16].unique(), replaceArr16, inplace=True)
+        del replaceArr16
         #make protocol to categorical data
         print('phase 23')
         df[23].replace(['tcp','udp','icmp'], range(0,3), inplace=True)
+
         #replaceArr23 = df[23].unique()
         #df[23].replace(replaceArr23, range(replaceArr23.shape[0]), inplace=True)
-        df.drop([18, 20, 22], axis=1)
+        df.drop([18, 20, 22], axis=1, inplace=True)
 
         if makePlot :
             if not os.path.exists('./plot'):
@@ -162,16 +166,21 @@ class AutoencoderIDS :
             df = df[df[17] > 0]
     
         print('phase 0') #std 비교
-        contactPoint = getContactPoint(normalMeans[0], normalStds[0], attackMeans[0], attackStds[0])
+        #contactPoint = getContactPoint(normalMeans[0], normalStds[0], attackMeans[0], attackStds[0])
+        contactPoint = 54.31586
+        #add contactPoint that already computed
         df[0] = df[0].map(lambda x : 1 if x > contactPoint else 0)
         print('phase 2') #std 비교
-        contactPoint = getContactPoint(normalMeans[2], normalStds[2], attackMeans[2], attackStds[2])
+        #contactPoint = getContactPoint(normalMeans[2], normalStds[2], attackMeans[2], attackStds[2])
+        contactPoint = 2686230.377
         df[2] = df[2].map(lambda x : 1 if x > contactPoint else 0)
         print('phase 3') #std 비교
-        contactPoint = getContactPoint(normalMeans[3], normalStds[3], attackMeans[3], attackStds[3])
+        #contactPoint = getContactPoint(normalMeans[3], normalStds[3], attackMeans[3], attackStds[3])
+        contactPoint = 2544586.63527
         df[3] = df[3].map(lambda x : 1 if x > contactPoint else 0)
         print('phase 4')
-        contactPoint = getContactPoint(normalMeans[4], normalStds[4], attackMeans[4], attackStds[4])
+        #contactPoint = getContactPoint(normalMeans[4], normalStds[4], attackMeans[4], attackStds[4])
+        contactPoint=10.9670
         df[4] = df[4].map(lambda x : 1 if x > contactPoint else 0)
         print('phase 8')
         df[8] = df[8]/100
@@ -192,7 +201,7 @@ class AutoencoderIDS :
         one_hot_encoding = enc.transform(df[[1,13,19,23]].values).toarray()
         #one_hot_encoding = enc.transform(df[[1,13,23]].values).toarray()
         
-        df = df.drop([1,13,17,18,19,20,21,22,23], axis = 1)
+        df.drop([1,13,17,18,19,20,21,22,23], axis = 1, inplace=True)
         
         inputData = np.concatenate((df, one_hot_encoding), axis = 1).astype(np.float32)
         print(label.shape, inputData.shape)
@@ -200,10 +209,11 @@ class AutoencoderIDS :
             print('Before drop Duplicate : ', inputData.shape[0])
             tempList = np.concatenate((inputData,label),axis=1)
             tempDF = pd.DataFrame(tempList)
+            print(tempList.shape)
             del tempList
             tempDF.drop_duplicates(inplace=True)
-            inputData = tempDF.loc[:, :111].values
-            label = tempDF.loc[:, 112].values
+            inputData = tempDF.loc[:, :116].values
+            label = tempDF.loc[:, 117].values
             print('After drop Duplicate : ', inputData.shape[0])
         
         print(inputData.shape)
@@ -222,13 +232,13 @@ class AutoencoderIDS :
         if(makeHDF5 == True) :
             if not os.path.exists('./hdf5'):
                 os.makedirs('./hdf5')
-            
+            import time
             if(flag == 1) :
                 filelist = open('./train.filelist.txt', 'w')
-                filename = 'training_'
+                filename = str(time.time())+'training_'
             else :
                 filelist = open('./test.filelist.txt', 'w')
-                filename = 'test_'
+                filename = str(time.time())+'test_'
             length = math.ceil(inputData.shape[0]/100000)
             
             for idx in range(length) :

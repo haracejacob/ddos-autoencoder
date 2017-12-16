@@ -78,3 +78,7 @@ dhcp
 krb_tcp
 ftp-data
 radius
+dns,sip
+http,ssh
+krb
+irc
