@@ -92,13 +92,23 @@ class AutoencoderIDS :
             gs = gridspec.GridSpec(18, 1)
             for i, cn in enumerate(df[v_features]):
                 print(i,idx, cn)
-                if(i in [14, 15, 16, 17,18,20,22]) :
+                if(i in [17,18,20,22]) :
                     continue
                 
                 ax = plt.subplot(gs[idx])
+                try :
+                    sns.kdeplot(df[cn][df[17] > 0], lw=3, label="normal")
+                except :
+                    sns.kdeplot(pd.concat((df[cn][df[17] > 0],pd.DataFrame([1])))[0], lw=3, label="normal")
+                try :
+                    sns.kdeplot(df[cn][df[17] < 0], lw=3, label="abnormal")   
+                except :
+                    sns.kdeplot(pd.concat((df[cn][df[17] < 0],pd.DataFrame([1])))[0], lw=3, label="abnormal")
+                #sns.kdeplot(df[cn][df[17] > 0], lw=3, label="normal")
+                #sns.kdeplot(df[cn][df[17] < 0], lw=3, label="abnormal")
                 
-                sns.distplot(df[cn][df[17] > 0], bins=50)
-                sns.distplot(df[cn][df[17] < 0], bins=50)
+                #sns.distplot(df[cn][df[17] > 0], bins=50, norm_hist=True, kde_kws={"lw": 3, "label": "normal"})
+                #sns.distplot(df[cn][df[17] < 0], bins=50, norm_hist=True, kde_kws={"lw": 3, "label": "abnormal"})
                 ax.set_xlabel('')
                 ax.set_title('histogram of feature: ' + columns[cn])
                 
