@@ -10,7 +10,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
-from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from sklearn import metrics
 import math
 import h5py
@@ -39,42 +39,25 @@ class AutoencoderIDS :
         return sumDF   
     
     def toNumericData(self, df, save=False, makePlot=False) :
+        print('Data size')
+        print(df.shape)
+        
+        print('filtering')
+        df = df[(df[17] < 0) | ((df[17]>0) & (df[14] == '0') & (df[15] == '0') & (df[16] == '0'))]
+        print(df.shape)        
+
         print('phase 1')
         df[1].replace(self.serviceData, range(len(self.serviceData)), inplace=True)
         #make flag to categorical data
         print('phase 13')
         df[13].replace(self.flagData, range(len(self.flagData)), inplace=True)
-        #make IDS_detection as binary (0:not triggered 1:triggered)
-        print('phase 14')
-        replaceArr14 = [1]*df[14].unique().shape[0]
-        if(df[14].unique()[0] == '0' or df[14].unique()[0] == 0) :
-            replaceArr14[0] = 0
-        df[14].replace(df[14].unique(), replaceArr14, inplace=True)
-        del replaceArr14
-        #make malware_detection as number of the same malware observed during the connection
-        print('phase 15')
-        replaceArr15 = []
-        for i in df[15].unique() :
-            if(i == 0 or i == '0') :
-                replaceArr15.append(0)
-            else :
-                replaceArr15.append(1)
-        df[15].replace(df[15].unique(), replaceArr15, inplace=True)
-        del replaceArr15
-        #make Ashula_detection as number of the same shellcode or exploit code observed during the connection
-        print('phase 16')
-        replaceArr16 = [1]*df[16].unique().shape[0]
-        if(df[16].unique()[0] == '0' or df[16].unique()[0] == 0) :
-            replaceArr16[0] = 0
-        df[16].replace(df[16].unique(), replaceArr16, inplace=True)
-        del replaceArr16
         #make protocol to categorical data
         print('phase 23')
         df[23].replace(['tcp','udp','icmp'], range(0,3), inplace=True)
 
         #replaceArr23 = df[23].unique()
         #df[23].replace(replaceArr23, range(replaceArr23.shape[0]), inplace=True)
-        df.drop([18, 20, 22], axis=1, inplace=True)
+        df.drop([14,15,16,18, 20, 22], axis=1, inplace=True)
 
         if makePlot :
             if not os.path.exists('./plot'):
@@ -88,11 +71,11 @@ class AutoencoderIDS :
             v_features = df.loc[:,0:24].columns
     
             idx = 0
-            fig = plt.figure(figsize=(12,18*4))
-            gs = gridspec.GridSpec(18, 1)
+            fig = plt.figure(figsize=(12,17*4))
+            gs = gridspec.GridSpec(17, 1)
             for i, cn in enumerate(df[v_features]):
                 print(i,idx, cn)
-                if(i in [17,18,20,22]) :
+                if(cn in [14,15,16,17,18,20,22]) :
                     continue
                 
                 ax = plt.subplot(gs[idx])
@@ -131,30 +114,8 @@ class AutoencoderIDS :
         return df
     
     def toAutoEncoderData(self, flag, df=None, csvPath=None, dropDuplicate=False, makeHDF5=True, makeCSV=True) :
-        def getNormalDistData(x, mean, std) :
-            #return 1/math.sqrt(2*math.pi*(std**2))*math.pow(math.e,-(x-mean)**2/(2*std**2))
-            return 2*math.log(std,math.e)+((x-mean)/std)**2
-        
-        def getContactPoint(mean1, std1, mean2, std2) :
-            if(mean1 > mean2) :
-                mean1, mean2 = mean2, mean1
-                std1, std2 = std2, std1
-            x = mean1
-            weights = 1
-            
-            while(weights != 0.00001) :
-                val1 = getNormalDistData(x+weights, mean1, std1)
-                val2 = getNormalDistData(x+weights, mean2, std2)
-                
-                if(val1 < val2) :
-                    x += weights
-                else :
-                    weights /= 10
-                
-            return x
-        
-        #85+13+3+3 = 104
-        enc = OneHotEncoder(n_values=[len(self.serviceData),len(self.flagData),3,3])
+        scaler = MinMaxScaler()
+        enc = OneHotEncoder(n_values=[len(self.serviceData),len(self.flagData),3,3,3]) #85+13+3+3+3 = 107
         if type(df) == type(None) :
             if type(csvPath) == type(None) :
                 return
@@ -163,36 +124,23 @@ class AutoencoderIDS :
             else :
                 df = self.getDataFrame(csvPath)
         
-        normalStatistics = df[df[17]>0].describe()
-        normalStatistics = normalStatistics.values
-        normalMeans = normalStatistics[1]
-        normalStds = normalStatistics[2]
-        
-        attackStatistics = df[df[17]<0].describe()
-        attackStatistics = attackStatistics.values
-        attackMeans = attackStatistics[1]
-        attackStds = attackStatistics[2]
+        numericDataDesc = df.loc[:, [0]].describe()
+        df[df[17]>0].describe(include='all').to_csv('normal_log_desc.csv')
+        df[df[17]<0].describe(include='all').to_csv('attack_log_desc.csv')
 
         if flag == 1 :
             df = df[df[17] > 0]
     
-        print('phase 0') #std 비교
-        #contactPoint = getContactPoint(normalMeans[0], normalStds[0], attackMeans[0], attackStds[0])
-        contactPoint = 54.31586
-        #add contactPoint that already computed
-        df[0] = df[0].map(lambda x : 1 if x > contactPoint else 0)
-        print('phase 2') #std 비교
-        #contactPoint = getContactPoint(normalMeans[2], normalStds[2], attackMeans[2], attackStds[2])
-        contactPoint = 2686230.377
-        df[2] = df[2].map(lambda x : 1 if x > contactPoint else 0)
+        print('phase 0')
+        iqr = (numericDataDesc[0].values[6]-numericDataDesc[0].values[4])*1.5
+        standard = numericDataDesc[0].values[5]+iqr
+        df[0] = df[0].map(lambda x : standard if x > standard else x)
+        print('phase 2')
+        df[2] = df[2].map(lambda x : 1 if x > 0 else 0)
         print('phase 3') #std 비교
-        #contactPoint = getContactPoint(normalMeans[3], normalStds[3], attackMeans[3], attackStds[3])
-        contactPoint = 2544586.63527
-        df[3] = df[3].map(lambda x : 1 if x > contactPoint else 0)
+        df[3] = df[3].map(lambda x : 1 if x > 0 else 0)
         print('phase 4')
-        #contactPoint = getContactPoint(normalMeans[4], normalStds[4], attackMeans[4], attackStds[4])
-        contactPoint=10.9670
-        df[4] = df[4].map(lambda x : 1 if x > contactPoint else 0)
+        df[4] = df[4]/100
         print('phase 8')
         df[8] = df[8]/100
         print('phase 9')
@@ -204,17 +152,20 @@ class AutoencoderIDS :
         #make port_number as one-hot encoding
         print('phase 19') #port number reserved port, well-know port, unknown port => one hot encoding
         df[19] = df[19].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
+        print('phase 21') #port number reserved port, well-know port, unknown port => one hot encoding
+        df[21] = df[21].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
+        scaler.fit(df[[0]].values)
+        enc.fit(df[[1,13,19,21,23]].values)
         
-        enc.fit(df[[1,13,19,23]].values)
-        
+        minMaxNorm = scaler.transform(df[[0]].values)
         #already droped 18,20,22
-        one_hot_encoding = enc.transform(df[[1,13,19,23]].values).toarray()
-        #one_hot_encoding = enc.transform(df[[1,13,23]].values).toarray()
+        oneHotEncoding = enc.transform(df[[1,13,19,21,23]].values).toarray()
 
-        #0,2,3,4,5,6,7,8,9,10,11,12,14,15,16 => 15
-        df.drop([1,13,17,19,21,23], axis = 1, inplace=True)
+        #2,3,4,5,6,7,8,9,10,11,12 => 11
+        df.drop([0,1,13,17,19,21,23], axis = 1, inplace=True)
 
-        inputData = np.concatenate((df, one_hot_encoding), axis = 1).astype(np.float32)
+        #1+11+107=119
+        inputData = np.concatenate((minMaxNorm, df, oneHotEncoding), axis = 1).astype(np.float32)
         print(label.shape, inputData.shape)
         if dropDuplicate :
             print('Before drop Duplicate : ', inputData.shape[0])
