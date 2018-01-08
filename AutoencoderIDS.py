@@ -87,11 +87,6 @@ class AutoencoderIDS :
                     sns.kdeplot(df[cn][df[17] < 0], lw=3, label="abnormal")   
                 except :
                     sns.kdeplot(pd.concat((df[cn][df[17] < 0],pd.DataFrame([1])))[0], lw=3, label="abnormal")
-                #sns.kdeplot(df[cn][df[17] > 0], lw=3, label="normal")
-                #sns.kdeplot(df[cn][df[17] < 0], lw=3, label="abnormal")
-                
-                #sns.distplot(df[cn][df[17] > 0], bins=50, norm_hist=True, kde_kws={"lw": 3, "label": "normal"})
-                #sns.distplot(df[cn][df[17] < 0], bins=50, norm_hist=True, kde_kws={"lw": 3, "label": "abnormal"})
                 ax.set_xlabel('')
                 ax.set_title('histogram of feature: ' + columns[cn])
                 
@@ -124,21 +119,31 @@ class AutoencoderIDS :
             else :
                 df = self.getDataFrame(csvPath)
         
-        numericDataDesc = df.loc[:, [0]].describe()
-        df[df[17]>0].describe(include='all').to_csv('normal_log_desc.csv')
-        df[df[17]<0].describe(include='all').to_csv('attack_log_desc.csv')
+        numericDataDesc = df.loc[:, [0,2,3]].describe()
+        df[df[14]>0].describe(include='all').to_csv('normal_log_desc.csv')
+        df[df[14]<0].describe(include='all').to_csv('attack_log_desc.csv')
 
         if flag == 1 :
-            df = df[df[17] > 0]
+            df = df[df[14] > 0]
     
         print('phase 0')
         iqr = (numericDataDesc[0].values[6]-numericDataDesc[0].values[4])*1.5
         standard = numericDataDesc[0].values[5]+iqr
         df[0] = df[0].map(lambda x : standard if x > standard else x)
         print('phase 2')
-        df[2] = df[2].map(lambda x : 1 if x > 0 else 0)
-        print('phase 3') #std 비교
-        df[3] = df[3].map(lambda x : 1 if x > 0 else 0)
+        iqr = (numericDataDesc[2].values[6]-numericDataDesc[2].values[4])*1.5
+        standard = numericDataDesc[2].values[5]+iqr
+        if standard == 0 :
+            df[2] = df[2].map(lambda x : 1 if x > 0 else 0)
+        else :
+            df[2] = df[2].map(lambda x : standard if x > standard else x)
+        print('phase 3')
+        iqr = (numericDataDesc[3].values[6]-numericDataDesc[3].values[4])*1.5
+        standard = numericDataDesc[3].values[5]+iqr
+        if standard == 0 :
+            df[3] = df[3].map(lambda x : 1 if x > 0 else 0)
+        else :
+            df[3] = df[3].map(lambda x : standard if x > standard else x)
         print('phase 4')
         df[4] = df[4]/100
         print('phase 8')
@@ -146,24 +151,25 @@ class AutoencoderIDS :
         print('phase 9')
         df[9] = df[9]/100        
         print('phase 17')
-        df[17] = df[17].map(lambda x : 1 if x > 0 else 0)
-        label = df[17].values.astype(np.int)
+        df[14] = df[14].map(lambda x : 1 if x > 0 else 0)
+        label = df[14].values.astype(np.int)
         label = label.reshape((label.shape[0],1))
         #make port_number as one-hot encoding
         print('phase 19') #port number reserved port, well-know port, unknown port => one hot encoding
-        df[19] = df[19].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
+        df[15] = df[15].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
         print('phase 21') #port number reserved port, well-know port, unknown port => one hot encoding
-        df[21] = df[21].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
-        scaler.fit(df[[0]].values)
-        enc.fit(df[[1,13,19,21,23]].values)
+        df[16] = df[16].map(lambda x : 2 if x > 49152 else 1 if x > 1024 else 0)
+        print(df.describe(include='all'))
+        scaler.fit(df[[0,2,3]].values)
+        enc.fit(df[[1,13,15,16,17]].values)
         
-        minMaxNorm = scaler.transform(df[[0]].values)
+        minMaxNorm = scaler.transform(df[[0,2,3]].values)
         #already droped 18,20,22
-        oneHotEncoding = enc.transform(df[[1,13,19,21,23]].values).toarray()
+        oneHotEncoding = enc.transform(df[[1,13,15,16,17]].values).toarray()
 
         #2,3,4,5,6,7,8,9,10,11,12 => 11
-        df.drop([0,1,13,17,19,21,23], axis = 1, inplace=True)
-
+        df.drop([0,1,2,3,13,14,15,16,17], axis = 1, inplace=True)
+        pd.DataFrame(oneHotEncoding).describe(include='all').to_csv('ohe_desc.csv')
         #1+11+107=119
         inputData = np.concatenate((minMaxNorm, df, oneHotEncoding), axis = 1).astype(np.float32)
         print(label.shape, inputData.shape)
@@ -181,12 +187,13 @@ class AutoencoderIDS :
         if(makeCSV == True) :
             if not os.path.exists('./csv'):
                 os.makedirs('./csv')
+            strTime = str(time.time())
             if(flag == 1) :
-                inputName = 'training_input.csv'
-                labelName = 'training_label.csv'
+                inputName = strTime+'training_input.csv'
+                labelName = strTime+'training_label.csv'
             else :
-                inputName = 'test_input.csv'
-                labelName = 'test_label.csv'
+                inputName = strTime+'test_input.csv'
+                labelName = strTime+'test_label.csv'
             pd.DataFrame(inputData).to_csv('./csv/'+inputName)
             pd.DataFrame(label).to_csv('./csv/'+labelName)
         
