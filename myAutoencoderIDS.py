@@ -12,6 +12,7 @@ import matplotlib.gridspec as gridspec
 import seaborn as sns
 from sklearn.preprocessing import OneHotEncoder, MinMaxScaler
 from sklearn import metrics
+from sklearn.model_selection import KFold
 import math
 import h5py
 #import caffe
@@ -108,23 +109,18 @@ class AutoencoderIDS :
             
         return df
     
-    def toAutoEncoderData(self, flag, df=None, csvPath=None, dropDuplicate=False, makeHDF5=True, makeCSV=True) :
+    def toAutoEncoderData(self, flag, csvPath) :
         scaler = MinMaxScaler()
         enc = OneHotEncoder(n_values=[len(self.serviceData),len(self.flagData),3,3,3]) #85+13+3+3+3 = 107
-        if type(df) == type(None) :
-            if type(csvPath) == type(None) :
-                return
-            if os.path.isfile(csvPath) :
-                df = pd.read_csv(csvPath, sep="\t", header = None)
-            else :
-                df = self.getDataFrame(csvPath)
+        
+        if os.path.isfile(csvPath) :
+            df = pd.read_csv(csvPath, sep="\t", header = None)
+        else :
+            df = self.getDataFrame(csvPath)
         
         numericDataDesc = df.loc[:, [0,2,3]].describe()
-        df[df[14]>0].describe(include='all').to_csv('normal_log_desc.csv')
-        df[df[14]<0].describe(include='all').to_csv('attack_log_desc.csv')
-
-        if flag == 1 :
-            df = df[df[14] > 0]
+        #df[df[14]>0].describe(include='all').to_csv('normal_log_desc.csv')
+        #df[df[14]<0].describe(include='all').to_csv('attack_log_desc.csv')
     
         print('phase 0')
         iqr = (numericDataDesc[0].values[6]-numericDataDesc[0].values[4])*1.5
@@ -165,69 +161,154 @@ class AutoencoderIDS :
         
         enc.fit(df[[1,13,15,16,17]].values)
         oneHotEncoding = enc.transform(df[[1,13,15,16,17]].values).toarray()
+        
 
         #already droped 18,20,22
         #2,3,4,5,6,7,8,9,10,11,12 => 11
-        df.drop([1,13,14,15,16,17], axis = 1, inplace=True)
-        #1+11+107=119
-        inputData = np.concatenate((df, oneHotEncoding), axis = 1).astype(np.float32)
-        print(label.shape, inputData.shape)
-        if dropDuplicate :
-            print('Before drop Duplicate : ', inputData.shape[0])
-            tempList = np.concatenate((inputData,label),axis=1)
-            tempDF = pd.DataFrame(tempList)
-            del tempList
-            tempDF.drop_duplicates(inplace=True)
-            inputData = tempDF.loc[:, :118].values
-            label = tempDF.loc[:, 119].values
-            print('After drop Duplicate : ', inputData.shape[0])
-        
-        print(label.shape, inputData.shape)
-        if(makeCSV == True) :
-            if not os.path.exists('./csv'):
-                os.makedirs('./csv')
-            import time
-            strTime = str(time.time())
-            if(flag == 1) :
-                inputName = strTime+'training_input.csv'
-                labelName = strTime+'training_label.csv'
-            else :
-                inputName = strTime+'test_input.csv'
-                labelName = strTime+'test_label.csv'
-            pd.DataFrame(inputData).to_csv('./csv/'+inputName)
-            pd.DataFrame(label).to_csv('./csv/'+labelName)
-        
-        if(makeHDF5 == True) :
+        if(flag == 1) :
+            #Training set은 99:1 3개 100:0 1개
+            attackLogIdx = df[df[14]==0].sample(n=df[df[14]==1].shape[0]).index
+            normalLogIdx = df[df[14]==1].index
+            df.drop([1,13,14,15,16,17], axis = 1, inplace=True)
+
+            attackLogList = np.concatenate((df.loc[attackLogIdx], oneHotEncoding[attackLogIdx]),axis=1)
+            attackDF = pd.DataFrame(attackLogList)
+            del attackLogList
+
+            normalLogList = np.concatenate((df.loc[normalLogIdx], oneHotEncoding[normalLogIdx]),axis=1)
+            normalDF = pd.DataFrame(normalLogList)
+            del normalLogList
+            
+            attackDF.drop_duplicates(inplace=True)
+            normalDF.drop_duplicates(inplace=True)
+
+            attackDF = attackDF.sample(n=int(normalDF.shape[0]*1/33)//3*3)
+           
+            attackLogList = attackDF.values
+            normalLogList = normalDF.values
+            del attackDF
+            del normalDF
+            
+            kf = KFold(n_splits=3)
+            kf.get_n_splits(attackLogList)
+            
+            attackDataIdx = []
+            for trainIdx, testIdx in kf.split(attackLogList) :
+                attackDataIdx.append(testIdx)
+            
             if not os.path.exists('./hdf5'):
                 os.makedirs('./hdf5')
-            import time
-            if(flag == 1) :
-                filelist = open('./train.filelist.txt', 'w')
-                filename = str(time.time())+'training_'
-            else :
-                filelist = open('./test.filelist.txt', 'w')
-                filename = str(time.time())+'test_'
+
+            idx = 0
+            for idxList in attackDataIdx :
+                attackData = attackLogList[idxList]
+                print('attack :', attackData.shape)
+                print('normal :', normalLogList.shape)
+                inputData = np.concatenate((normalLogList, attackData), axis=0).astype(np.float32)
+                label = np.array([1]*normalLogList.shape[0]+[0]*attackData.shape[0]).reshape((normalLogList.shape[0]+attackData.shape[0],1))
+                filename = 'mixed_trainingset_'+str(idx)
+                
+                print(filename+'_data.csv')
+                print(filename+'_label.csv')
+                pd.DataFrame(inputData).to_csv(filename+'_data.csv', header=False, index=False)
+                pd.DataFrame(label).to_csv(filename+'_label.csv', header=False, index=False)
+                
+                length = math.ceil(inputData.shape[0]/100000)
+
+                print('mixed_trainingset : ', inputData.shape, label.shape)                
+                for fileIdx in range(length) :
+                    hdf5FilePath = './hdf5/'+filename+'_'+str(fileIdx)+'.hdf5'
+                    print(hdf5FilePath)
+    
+                    if(idx+1 == length) :
+                        with h5py.File(hdf5FilePath, 'w') as f:
+                            f['data'] = inputData[idx*100000:]
+                            f['label'] = label[idx*100000:]
+                    else :
+                        with h5py.File(hdf5FilePath, 'w') as f:
+                            f['data'] = inputData[idx*100000:(idx+1)*100000]
+                            f['label'] = label[idx*100000:(idx+1)*100000]
+                idx+=1
+            
+            #순수 trainingset
+            inputData = normalLogList.astype(np.float32)
+            label = np.array([1]*inputData.shape[0]).reshape((inputData.shape[0],1))
+            filename = 'pure_trainingset'
+            
+            print(filename+'_data.csv')
+            print(filename+'_label.csv')
+            pd.DataFrame(inputData).to_csv(filename+'_data.csv', header=False, index=False)
+            pd.DataFrame(label).to_csv(filename+'_label.csv', header=False, index=False)
+            
             length = math.ceil(inputData.shape[0]/100000)
             
+            print('pure_trainingset : ', inputData.shape, label.shape)
+                
             for idx in range(length) :
-                hdf5FilePath = './hdf5/'+filename+str(idx)+'.hdf5'
+                hdf5FilePath = './hdf5/'+filename+'_'+str(idx)+'.hdf5'
                 print(hdf5FilePath)
 
                 if(idx+1 == length) :
                     with h5py.File(hdf5FilePath, 'w') as f:
                         f['data'] = inputData[idx*100000:]
                         f['label'] = label[idx*100000:]
-                    filelist.write(hdf5FilePath)
                 else :
                     with h5py.File(hdf5FilePath, 'w') as f:
                         f['data'] = inputData[idx*100000:(idx+1)*100000]
                         f['label'] = label[idx*100000:(idx+1)*100000]
-                        #f['data'] = inputData
-                        #f['label'] = label
-                    filelist.write(hdf5FilePath+'\n')
-            filelist.close()
             
-        return inputData, label
+        else :
+            #Test set은 50:50 1개
+            attackLogIdx = df[df[14]==0].sample(n=df[df[14]==1].shape[0]*2).index
+            normalLogIdx = df[df[14]==1].index
+            df.drop([1,13,14,15,16,17], axis = 1, inplace=True)
+            attackLogList = np.concatenate((df.loc[attackLogIdx], oneHotEncoding[attackLogIdx]),axis=1)
+            attackDF = pd.DataFrame(attackLogList)
+            del attackLogList
+            
+            normalLogList = np.concatenate((df.loc[normalLogIdx], oneHotEncoding[normalLogIdx]),axis=1)
+            normalDF = pd.DataFrame(normalLogList)
+            del normalLogList
+            
+            attackDF.drop_duplicates(inplace=True)
+            normalDF.drop_duplicates(inplace=True)
+            attackDF = attackDF.sample(n=int(normalDF.shape[0]))
+           
+            attackLogList = attackDF.values
+            normalLogList = normalDF.values
+            del attackDF
+            del normalDF
+                        
+            if not os.path.exists('./hdf5'):
+                os.makedirs('./hdf5')
+            
+            print(attackLogList.shape, normalLogList.shape)
+            #testset
+            inputData = np.concatenate((normalLogList, attackLogList), axis=0).astype(np.float32)
+            label = np.array([1]*normalLogList.shape[0]+[0]*attackLogList.shape[0]).reshape((inputData.shape[0],1))
+            filename = 'testset'
+            
+            print(filename+'_data.csv')
+            print(filename+'_label.csv')
+            pd.DataFrame(inputData).to_csv(filename+'_data.csv', header=False, index=False)
+            pd.DataFrame(label).to_csv(filename+'_label.csv', header=False, index=False)
+
+            length = math.ceil(inputData.shape[0]/100000)
+            
+            print('testset : ', inputData.shape, label.shape)
+                
+            for idx in range(length) :
+                hdf5FilePath = './hdf5/'+filename+'_'+str(idx)+'.hdf5'
+                print(hdf5FilePath)
+
+                if(idx+1 == length) :
+                    with h5py.File(hdf5FilePath, 'w') as f:
+                        f['data'] = inputData[idx*100000:]
+                        f['label'] = label[idx*100000:]
+                else :
+                    with h5py.File(hdf5FilePath, 'w') as f:
+                        f['data'] = inputData[idx*100000:(idx+1)*100000]
+                        f['label'] = label[idx*100000:(idx+1)*100000]
             
     def deploy(self, model, weights, df=None, label=None, hdf5Path=None, makeCSV=True, makePlot=True) :
         def cross_entropy(y, p) :    
