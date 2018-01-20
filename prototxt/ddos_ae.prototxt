@@ -5,7 +5,7 @@ layer {
   top: "data"
   hdf5_data_param {
     source: "train.filelist.txt"
-    batch_size: 64
+    batch_size: 300
   }
   include {
     phase: TRAIN
@@ -255,7 +255,7 @@ layer {
     decay_mult: 0
   }
   inner_product_param {
-    num_output: 112
+    num_output: 119
     weight_filler {
       type: "gaussian"
       std: 1

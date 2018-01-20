@@ -7,7 +7,7 @@ base_lr: 1.0
 lr_policy: "fixed"
 delta: 1e-8
 display: 1000
-max_iter: 100000
+max_iter: 60000
 weight_decay: 0.0005
 snapshot: 10000
 snapshot_prefix: "prototxt/ddos_ae_delta"

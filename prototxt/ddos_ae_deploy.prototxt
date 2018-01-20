@@ -3,7 +3,7 @@ layer {
   name: "data"
   type: "Input"
   top: "data"
-  input_param { shape: { dim: 1 dim:112 } }
+  input_param { shape: { dim: 1 dim:119 } }
 }
 layer {
   name: "encode1"
@@ -237,7 +237,7 @@ layer {
     decay_mult: 0
   }
   inner_product_param {
-    num_output: 112
+    num_output: 119
     weight_filler {
       type: "gaussian"
       std: 1
